@@ -11,8 +11,7 @@ import (
 // XXX: secp256k1 does not have max signature size defined.
 var MaxSignatureSize = cmtmath.MaxInt(
 	ed25519.SignatureSize,
-	bls12381.SignatureLength,
-)
+	bls12381.SignatureLength)
 
 // Signable is an interface for all signable things.
 // It typically removes signatures before serializing.

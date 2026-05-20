@@ -65,7 +65,7 @@ func decodeReflect(bz []byte, rv reflect.Value) error {
 		}
 	}
 
-	// If value implements json.Unmarshaler, call it.
+	// If value implements json.Umarshaler, call it.
 	if rv.Addr().Type().Implements(jsonUnmarshalerType) {
 		return rv.Addr().Interface().(json.Unmarshaler).UnmarshalJSON(bz)
 	}
@@ -115,7 +115,6 @@ func decodeReflectList(bz []byte, rv reflect.Value) error {
 				return fmt.Errorf("got %v bytes, expected %v", len(buf), rv.Len())
 			}
 			reflect.Copy(rv, reflect.ValueOf(buf))
-
 		} else if err := decodeStdlib(bz, rv); err != nil {
 			return err
 		}
