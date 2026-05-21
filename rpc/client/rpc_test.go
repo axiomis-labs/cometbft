@@ -1,7 +1,6 @@
 package client_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -385,12 +384,11 @@ func TestUnconfirmedTx(t *testing.T) {
 		t.Error("Timed out waiting for CheckTx callback")
 	}
 	target := types.Tx(tx)
-	for i, c := range GetClients() {
+	for _, c := range GetClients() {
 		mc := c.(client.MempoolClient)
-		require.Eventuallyf(t, func() bool {
-			res, err := mc.UnconfirmedTx(context.Background(), target.Hash())
-			return err == nil && res != nil && bytes.Equal(target, res.Tx)
-		}, 5*time.Second, 50*time.Millisecond, "%d: timed out waiting for unconfirmed tx", i)
+		res, err := mc.UnconfirmedTx(context.Background(), target.Hash())
+		require.NoError(t, err)
+		assert.Exactly(t, target, res.Tx)
 	}
 
 	mempool.Flush()

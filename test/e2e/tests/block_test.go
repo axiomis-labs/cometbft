@@ -158,8 +158,7 @@ func TestBlock_Time(t *testing.T) {
 
 		valSchedule.Increment(1)
 		if testnet.PbtsEnableHeight == 0 || block.Height < testnet.PbtsEnableHeight {
-			expTime, err := block.LastCommit.MedianTime(valSchedule.Set)
-			require.NoError(t, err)
+			expTime := block.LastCommit.MedianTime(valSchedule.Set)
 			require.Equal(t, expTime, block.Time, "height=%d", block.Height)
 		}
 	}

@@ -946,7 +946,7 @@ func (commit *Commit) ValidateBasic() error {
 // the timestamps produced by honest processes, i.e., faulty processes cannot arbitrarily
 // increase or decrease the median time.
 // See: https://github.com/cometbft/cometbft/blob/main/spec/consensus/bft-time.md
-func (commit *Commit) MedianTime(validators *ValidatorSet) (time.Time, error) {
+func (commit *Commit) MedianTime(validators *ValidatorSet) time.Time {
 	weightedTimes := make([]*cmttime.WeightedTime, len(commit.Signatures))
 	totalVotingPower := int64(0)
 
@@ -955,15 +955,14 @@ func (commit *Commit) MedianTime(validators *ValidatorSet) (time.Time, error) {
 			continue
 		}
 		_, validator := validators.GetByAddressMut(commitSig.ValidatorAddress)
-		if validator == nil {
-			return time.Time{}, fmt.Errorf("commit validator not found in validator set: %X",
-				commitSig.ValidatorAddress)
+		// If there's no condition, TestValidateBlockCommit panics; not needed normally.
+		if validator != nil {
+			totalVotingPower += validator.VotingPower
+			weightedTimes[i] = cmttime.NewWeightedTime(commitSig.Timestamp, validator.VotingPower)
 		}
-		totalVotingPower += validator.VotingPower
-		weightedTimes[i] = cmttime.NewWeightedTime(commitSig.Timestamp, validator.VotingPower)
 	}
 
-	return cmttime.WeightedMedian(weightedTimes, totalVotingPower), nil
+	return cmttime.WeightedMedian(weightedTimes, totalVotingPower)
 }
 
 // Hash returns the hash of the commit.

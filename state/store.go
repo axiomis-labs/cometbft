@@ -1,13 +1,11 @@
 package state
 
 import (
-	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
 
-	amxmetrics "github.com/axiomis-labs/metrics/v2"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/google/orderedcode"
 
@@ -18,7 +16,7 @@ import (
 	cmtos "github.com/cometbft/cometbft/internal/os"
 	"github.com/cometbft/cometbft/libs/log"
 	cmtmath "github.com/cometbft/cometbft/libs/math"
-	cmtmetrics "github.com/cometbft/cometbft/libs/metrics"
+	"github.com/cometbft/cometbft/libs/metrics"
 	"github.com/cometbft/cometbft/types"
 )
 
@@ -182,10 +180,6 @@ type StoreOptions struct {
 	// if none is specified then a NopMetrics collector is used.
 	Metrics *Metrics
 
-	// Meter defines the tracing meter to use for top-level store calls.
-	// If none is specified then a nil meter is used.
-	Meter amxmetrics.Meter
-
 	Logger log.Logger
 
 	DBKeyLayout string
@@ -238,10 +232,6 @@ func NewStore(db dbm.DB, options StoreOptions) Store {
 		options.Metrics = NopMetrics()
 	}
 
-	if options.Meter == nil {
-		options.Meter = amxmetrics.NewNilMeter()
-	}
-
 	store := dbStore{
 		db:           db,
 		StoreOptions: options,
@@ -258,16 +248,14 @@ func NewStore(db dbm.DB, options StoreOptions) Store {
 
 // LoadStateFromDBOrGenesisFile loads the most recent state from the database,
 // or creates a new one from the given genesisFilePath.
-func (store dbStore) LoadFromDBOrGenesisFile(genesisFilePath string) (state State, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "LoadFromDBOrGenesisFile")
-	defer stopFn(&err)
-
+func (store dbStore) LoadFromDBOrGenesisFile(genesisFilePath string) (State, error) {
 	defer addTimeSample(store.StoreOptions.Metrics.StoreAccessDurationSeconds.With("method", "load_from_db_or_genesis_file"), time.Now())()
-	state, err = store.Load()
+	state, err := store.Load()
 	if err != nil {
 		return State{}, err
 	}
 	if state.IsEmpty() {
+		var err error
 		state, err = MakeGenesisStateFromFile(genesisFilePath)
 		if err != nil {
 			return state, err
@@ -279,17 +267,15 @@ func (store dbStore) LoadFromDBOrGenesisFile(genesisFilePath string) (state Stat
 
 // LoadStateFromDBOrGenesisDoc loads the most recent state from the database,
 // or creates a new one from the given genesisDoc.
-func (store dbStore) LoadFromDBOrGenesisDoc(genesisDoc *types.GenesisDoc) (state State, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "LoadFromDBOrGenesisDoc")
-	defer stopFn(&err)
-
+func (store dbStore) LoadFromDBOrGenesisDoc(genesisDoc *types.GenesisDoc) (State, error) {
 	defer addTimeSample(store.StoreOptions.Metrics.StoreAccessDurationSeconds.With("method", "load_from_db_or_genesis_doc"), time.Now())()
-	state, err = store.Load()
+	state, err := store.Load()
 	if err != nil {
 		return State{}, err
 	}
 
 	if state.IsEmpty() {
+		var err error
 		state, err = MakeGenesisState(genesisDoc)
 		if err != nil {
 			return state, err
@@ -300,10 +286,7 @@ func (store dbStore) LoadFromDBOrGenesisDoc(genesisDoc *types.GenesisDoc) (state
 }
 
 // LoadState loads the State from the database.
-func (store dbStore) Load() (state State, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "Load")
-	defer stopFn(&err)
-
+func (store dbStore) Load() (State, error) {
 	return store.loadState(stateKey)
 }
 
@@ -338,10 +321,7 @@ func (store dbStore) loadState(key []byte) (state State, err error) {
 
 // Save persists the State, the ValidatorsInfo, and the ConsensusParamsInfo to the database.
 // This flushes the writes (e.g. calls SetSync).
-func (store dbStore) Save(state State) (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "Save")
-	defer stopFn(&err)
-
+func (store dbStore) Save(state State) error {
 	return store.save(state, stateKey)
 }
 
@@ -392,10 +372,7 @@ func (store dbStore) save(state State, key []byte) error {
 }
 
 // BootstrapState saves a new state, used e.g. by state sync when starting from non-zero height.
-func (store dbStore) Bootstrap(state State) (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "Bootstrap")
-	defer stopFn(&err)
-
+func (store dbStore) Bootstrap(state State) error {
 	batch := store.db.NewBatch()
 	defer func(batch dbm.Batch) {
 		err := batch.Close()
@@ -447,10 +424,7 @@ func (store dbStore) Bootstrap(state State) (err error) {
 // encoding not preserving ordering: https://github.com/tendermint/tendermint/issues/4567
 // This will cause some old states to be left behind when doing incremental partial prunes,
 // specifically older checkpoints and LastHeightChanged targets.
-func (store dbStore) PruneStates(from int64, to int64, evidenceThresholdHeight int64, previosulyPrunedStates uint64) (pruned uint64, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "PruneStates")
-	defer stopFn(&err)
-
+func (store dbStore) PruneStates(from int64, to int64, evidenceThresholdHeight int64, previosulyPrunedStates uint64) (uint64, error) {
 	defer addTimeSample(store.StoreOptions.Metrics.StoreAccessDurationSeconds.With("method", "prune_states"), time.Now())()
 
 	if from <= 0 || to <= 0 {
@@ -482,6 +456,8 @@ func (store dbStore) PruneStates(from int64, to int64, evidenceThresholdHeight i
 
 	batch := store.db.NewBatch()
 	defer batch.Close()
+	pruned := uint64(0)
+
 	// We have to delete in reverse order, to avoid deleting previous heights that have validator
 	// sets and consensus params that we may need to retrieve.
 	for h := to - 1; h >= from; h-- {
@@ -593,9 +569,6 @@ func (store dbStore) PruneStates(from int64, to int64, evidenceThresholdHeight i
 // including, the given height. On success, returns the number of heights
 // pruned and the new retain height.
 func (store dbStore) PruneABCIResponses(targetRetainHeight int64, forceCompact bool) (pruned int64, newRetainHeight int64, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "PruneABCIResponses")
-	defer stopFn(&err)
-
 	if store.DiscardABCIResponses {
 		return 0, 0, nil
 	}
@@ -660,10 +633,7 @@ func TxResultsHash(txResults []*abci.ExecTxResult) []byte {
 // LoadFinalizeBlockResponse loads the DiscardABCIResponses for the given height from the
 // database. If the node has D set to true, ErrFinalizeBlockResponsesNotPersisted
 // is persisted. If not found, ErrNoABCIResponsesForHeight is returned.
-func (store dbStore) LoadFinalizeBlockResponse(height int64) (resp *abci.FinalizeBlockResponse, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "LoadFinalizeBlockResponse")
-	defer stopFn(&err)
-
+func (store dbStore) LoadFinalizeBlockResponse(height int64) (*abci.FinalizeBlockResponse, error) {
 	if store.DiscardABCIResponses {
 		return nil, ErrFinalizeBlockResponsesNotPersisted
 	}
@@ -680,7 +650,7 @@ func (store dbStore) LoadFinalizeBlockResponse(height int64) (resp *abci.Finaliz
 		return nil, ErrNoABCIResponsesForHeight{height}
 	}
 
-	resp = new(abci.FinalizeBlockResponse)
+	resp := new(abci.FinalizeBlockResponse)
 	err = resp.Unmarshal(buf)
 	// Check for an error or if the resp.AppHash is nil if so
 	// this means the unmarshalling should be a LegacyABCIResponses
@@ -717,10 +687,7 @@ func (store dbStore) LoadFinalizeBlockResponse(height int64) (resp *abci.Finaliz
 //
 // This method is used for recovering in the case that we called the Commit ABCI
 // method on the application but crashed before persisting the results.
-func (store dbStore) LoadLastFinalizeBlockResponse(height int64) (resp *abci.FinalizeBlockResponse, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "LoadLastFinalizeBlockResponse")
-	defer stopFn(&err)
-
+func (store dbStore) LoadLastFinalizeBlockResponse(height int64) (*abci.FinalizeBlockResponse, error) {
 	start := time.Now()
 	buf, err := store.db.Get(store.DBKeyLayout.CalcABCIResponsesKey(height))
 	if err != nil {
@@ -754,7 +721,7 @@ func (store dbStore) LoadLastFinalizeBlockResponse(height int64) (resp *abci.Fin
 		// END OF DEPRECATED lastABCIResponseKey
 		return nil, fmt.Errorf("expected last ABCI responses at height %d, but none are found", height)
 	}
-	resp = new(abci.FinalizeBlockResponse)
+	resp := new(abci.FinalizeBlockResponse)
 	err = resp.Unmarshal(buf)
 	if err != nil {
 		cmtos.Exit(fmt.Sprintf(`LoadLastFinalizeBlockResponse: Data has been corrupted or its spec has changed: %v\n`, err))
@@ -768,10 +735,7 @@ func (store dbStore) LoadLastFinalizeBlockResponse(height int64) (resp *abci.Fin
 // Merkle proofs.
 //
 // CONTRACT: height must be monotonically increasing every time this is called.
-func (store dbStore) SaveFinalizeBlockResponse(height int64, resp *abci.FinalizeBlockResponse) (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "SaveFinalizeBlockResponse")
-	defer stopFn(&err)
-
+func (store dbStore) SaveFinalizeBlockResponse(height int64, resp *abci.FinalizeBlockResponse) error {
 	var dtxs []*abci.ExecTxResult
 	// strip nil values,
 	for _, tx := range resp.TxResults {
@@ -816,22 +780,16 @@ func (store dbStore) getValue(key []byte) ([]byte, error) {
 }
 
 // ApplicationRetainHeight.
-func (store dbStore) SaveApplicationRetainHeight(height int64) (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "SaveApplicationRetainHeight")
-	defer stopFn(&err)
-
+func (store dbStore) SaveApplicationRetainHeight(height int64) error {
 	return store.db.SetSync(AppRetainHeightKey, int64ToBytes(height))
 }
 
-func (store dbStore) GetApplicationRetainHeight() (height int64, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "GetApplicationRetainHeight")
-	defer stopFn(&err)
-
+func (store dbStore) GetApplicationRetainHeight() (int64, error) {
 	buf, err := store.getValue(AppRetainHeightKey)
 	if err != nil {
 		return 0, err
 	}
-	height = int64FromBytes(buf)
+	height := int64FromBytes(buf)
 
 	if height < 0 {
 		return 0, ErrInvalidHeightValue
@@ -841,22 +799,16 @@ func (store dbStore) GetApplicationRetainHeight() (height int64, err error) {
 }
 
 // DataCompanionRetainHeight.
-func (store dbStore) SaveCompanionBlockRetainHeight(height int64) (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "SaveCompanionBlockRetainHeight")
-	defer stopFn(&err)
-
+func (store dbStore) SaveCompanionBlockRetainHeight(height int64) error {
 	return store.db.SetSync(CompanionBlockRetainHeightKey, int64ToBytes(height))
 }
 
-func (store dbStore) GetCompanionBlockRetainHeight() (height int64, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "GetCompanionBlockRetainHeight")
-	defer stopFn(&err)
-
+func (store dbStore) GetCompanionBlockRetainHeight() (int64, error) {
 	buf, err := store.getValue(CompanionBlockRetainHeightKey)
 	if err != nil {
 		return 0, err
 	}
-	height = int64FromBytes(buf)
+	height := int64FromBytes(buf)
 
 	if height < 0 {
 		return 0, ErrInvalidHeightValue
@@ -866,22 +818,16 @@ func (store dbStore) GetCompanionBlockRetainHeight() (height int64, err error) {
 }
 
 // DataCompanionRetainHeight.
-func (store dbStore) SaveABCIResRetainHeight(height int64) (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "SaveABCIResRetainHeight")
-	defer stopFn(&err)
-
+func (store dbStore) SaveABCIResRetainHeight(height int64) error {
 	return store.db.SetSync(ABCIResultsRetainHeightKey, int64ToBytes(height))
 }
 
-func (store dbStore) GetABCIResRetainHeight() (height int64, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "GetABCIResRetainHeight")
-	defer stopFn(&err)
-
+func (store dbStore) GetABCIResRetainHeight() (int64, error) {
 	buf, err := store.getValue(ABCIResultsRetainHeightKey)
 	if err != nil {
 		return 0, err
 	}
-	height = int64FromBytes(buf)
+	height := int64FromBytes(buf)
 
 	if height < 0 {
 		return 0, ErrInvalidHeightValue
@@ -910,10 +856,7 @@ func (store dbStore) setLastABCIResponsesRetainHeight(height int64) error {
 
 // LoadValidators loads the ValidatorSet for a given height.
 // Returns ErrNoValSetForHeight if the validator set can't be found for this height.
-func (store dbStore) LoadValidators(height int64) (validatorSet *types.ValidatorSet, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "LoadValidators")
-	defer stopFn(&err)
-
+func (store dbStore) LoadValidators(height int64) (*types.ValidatorSet, error) {
 	valInfo, elapsedTime, err := loadValidatorsInfo(store.db, store.DBKeyLayout.CalcValidatorsKey(height))
 	if err != nil {
 		return nil, ErrNoValSetForHeight{height}
@@ -947,12 +890,12 @@ func (store dbStore) LoadValidators(height int64) (validatorSet *types.Validator
 		valInfo = valInfo2
 	}
 
-	validatorSet, err = types.ValidatorSetFromProto(valInfo.ValidatorSet)
+	vip, err := types.ValidatorSetFromProto(valInfo.ValidatorSet)
 	if err != nil {
 		return nil, err
 	}
 	store.StoreOptions.Metrics.StoreAccessDurationSeconds.With("method", "load_validators").Observe(elapsedTime)
-	return validatorSet, nil
+	return vip, nil
 }
 
 func lastStoredHeightFor(height, lastHeightChanged int64) int64 {
@@ -1027,10 +970,7 @@ func (store dbStore) saveValidatorsInfo(height, lastHeightChanged int64, valSet 
 // ConsensusParamsInfo represents the latest consensus params, or the last height it changed
 
 // LoadConsensusParams loads the ConsensusParams for a given height.
-func (store dbStore) LoadConsensusParams(height int64) (params types.ConsensusParams, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "LoadConsensusParams")
-	defer stopFn(&err)
-
+func (store dbStore) LoadConsensusParams(height int64) (types.ConsensusParams, error) {
 	var (
 		empty   = types.ConsensusParams{}
 		emptypb = cmtproto.ConsensusParams{}
@@ -1106,18 +1046,16 @@ func (store dbStore) saveConsensusParamsInfo(nextHeight, changeHeight int64, par
 	return nil
 }
 
-func (store dbStore) SetOfflineStateSyncHeight(height int64) (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "SetOfflineStateSyncHeight")
-	defer stopFn(&err)
-
-	return store.db.SetSync(offlineStateSyncHeight, int64ToBytes(height))
+func (store dbStore) SetOfflineStateSyncHeight(height int64) error {
+	err := store.db.SetSync(offlineStateSyncHeight, int64ToBytes(height))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Gets the height at which the store is bootstrapped after out of band statesync.
-func (store dbStore) GetOfflineStateSyncHeight() (height int64, err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "GetOfflineStateSyncHeight")
-	defer stopFn(&err)
-
+func (store dbStore) GetOfflineStateSyncHeight() (int64, error) {
 	buf, err := store.db.Get(offlineStateSyncHeight)
 	if err != nil {
 		return 0, err
@@ -1127,17 +1065,14 @@ func (store dbStore) GetOfflineStateSyncHeight() (height int64, err error) {
 		return 0, errors.New("value empty")
 	}
 
-	height = int64FromBytes(buf)
+	height := int64FromBytes(buf)
 	if height < 0 {
 		return 0, errors.New("invalid value for height: height cannot be negative")
 	}
 	return height, nil
 }
 
-func (store dbStore) Close() (err error) {
-	_, stopFn := store.StoreOptions.Meter.FuncTimingCtx(context.Background(), "Close")
-	defer stopFn(&err)
-
+func (store dbStore) Close() error {
 	return store.db.Close()
 }
 
@@ -1215,6 +1150,6 @@ func int64ToBytes(i int64) []byte {
 // The observation added to m is the number of seconds elapsed since addTimeSample
 // was initially called. addTimeSample is meant to be called in a defer to calculate
 // the amount of time a function takes to complete.
-func addTimeSample(m cmtmetrics.Histogram, start time.Time) func() {
+func addTimeSample(m metrics.Histogram, start time.Time) func() {
 	return func() { m.Observe(time.Since(start).Seconds()) }
 }

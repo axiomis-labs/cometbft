@@ -308,8 +308,7 @@ func fillStore(t *testing.T, height int64, stateStore sm.Store, bs *store.BlockS
 		require.NoError(t, err, responses)
 		require.Equal(t, response1, responses)
 	}
-	b1, err := state.MakeBlock(state.LastBlockHeight+1, test.MakeNTxs(state.LastBlockHeight+1, 10), new(types.Commit), nil, nil)
-	require.NoError(t, err)
+	b1 := state.MakeBlock(state.LastBlockHeight+1, test.MakeNTxs(state.LastBlockHeight+1, 10), new(types.Commit), nil, nil)
 	partSet, err := b1.MakePartSet(types.BlockPartSizeBytes)
 	require.NoError(t, err)
 	bs.SaveBlock(b1, partSet, &types.Commit{Height: state.LastBlockHeight + 1})

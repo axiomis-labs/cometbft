@@ -13,7 +13,6 @@ import (
 
 	_ "net/http/pprof" //nolint: gosec,gci // securely exposed on separate, optional port
 
-	"github.com/axiomis-labs/metrics/v2"
 	_ "github.com/lib/pq" //nolint: gci // provide the psql db driver.
 
 	dbm "github.com/cometbft/cometbft-db"
@@ -121,9 +120,7 @@ func DefaultNewNode(
 		}
 	}
 
-	return NewNodeWithCliParams(
-		context.Background(),
-		config,
+	return NewNodeWithCliParams(context.Background(), config,
 		pv,
 		nodeKey,
 		proxy.DefaultClientCreator(config.ProxyApp, config.ABCI, config.DBDir()),
@@ -132,7 +129,6 @@ func DefaultNewNode(
 		DefaultMetricsProvider(config.Instrumentation),
 		logger,
 		cliParams,
-		nil,
 	)
 }
 
@@ -291,7 +287,6 @@ func createMempoolAndMempoolReactor(
 	memplMetrics *mempl.Metrics,
 	logger log.Logger,
 	appInfoResponse *abci.InfoResponse,
-	meter metrics.Meter,
 ) (mempl.Mempool, waitSyncP2PReactor) {
 	switch config.Mempool.Type {
 	// allow empty string for backward compatibility
@@ -310,7 +305,6 @@ func createMempoolAndMempoolReactor(
 			mempl.WithMetrics(memplMetrics),
 			mempl.WithPreCheck(sm.TxPreCheck(state)),
 			mempl.WithPostCheck(sm.TxPostCheck(state)),
-			mempl.WithMeter(meter),
 		)
 		mp.SetLogger(logger)
 		reactor := mempl.NewReactor(
@@ -385,7 +379,6 @@ func createConsensusReactor(config *cfg.Config,
 	eventBus *types.EventBus,
 	consensusLogger log.Logger,
 	offlineStateSyncHeight int64,
-	meter metrics.Meter,
 ) (*cs.Reactor, *cs.State) {
 	consensusState := cs.NewState(
 		config.Consensus,
@@ -395,19 +388,13 @@ func createConsensusReactor(config *cfg.Config,
 		mempool,
 		evidencePool,
 		cs.StateMetrics(csMetrics),
-		cs.StateMeter(meter),
 		cs.OfflineStateSyncHeight(offlineStateSyncHeight),
 	)
 	consensusState.SetLogger(consensusLogger)
 	if privValidator != nil {
 		consensusState.SetPrivValidator(privValidator)
 	}
-	consensusReactor := cs.NewReactor(
-		consensusState,
-		waitSync,
-		cs.ReactorMetrics(csMetrics),
-		cs.ReactorMeter(meter),
-	)
+	consensusReactor := cs.NewReactor(consensusState, waitSync, cs.ReactorMetrics(csMetrics))
 	consensusReactor.SetLogger(consensusLogger)
 	// services which will be publishing and/or subscribing for messages (events)
 	// consensusReactor will set it on consensusState and blockExecutor

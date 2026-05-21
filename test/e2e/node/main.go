@@ -142,9 +142,7 @@ func startNode(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	n, err := node.NewNode(
-		context.Background(),
-		cmtcfg,
+	n, err := node.NewNode(context.Background(), cmtcfg,
 		pv,
 		nodeKey,
 		clientCreator,
@@ -152,7 +150,6 @@ func startNode(cfg *Config) error {
 		config.DefaultDBProvider,
 		node.DefaultMetricsProvider(cmtcfg.Instrumentation),
 		nodeLogger,
-		nil,
 	)
 	if err != nil {
 		return err

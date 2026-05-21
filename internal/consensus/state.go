@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"time"
 
-	amxmetrics "github.com/axiomis-labs/metrics/v2"
 	"github.com/cosmos/gogoproto/proto"
 
 	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
@@ -135,7 +134,6 @@ type State struct {
 
 	// for reporting metrics
 	metrics *Metrics
-	meter   amxmetrics.Meter
 
 	// offline state sync height indicating to which height the node synced offline
 	offlineStateSyncHeight int64
@@ -173,7 +171,6 @@ func NewState(
 		evpool:           evpool,
 		evsw:             cmtevents.NewEventSwitch(),
 		metrics:          NopMetrics(),
-		meter:            amxmetrics.NewNilMeter(),
 	}
 	for _, option := range options {
 		option(cs)
@@ -221,11 +218,6 @@ func (cs *State) SetEventBus(b *types.EventBus) {
 // StateMetrics sets the metrics.
 func StateMetrics(metrics *Metrics) StateOption {
 	return func(cs *State) { cs.metrics = metrics }
-}
-
-// StateMeter sets the tracing meter.
-func StateMeter(meter amxmetrics.Meter) StateOption {
-	return func(cs *State) { cs.meter = meter }
 }
 
 // OfflineStateSyncHeight indicates the height at which the node
@@ -885,9 +877,6 @@ func (cs *State) receiveRoutine(maxSteps int) {
 
 // state transitions on complete-proposal, 2/3-any, 2/3-one.
 func (cs *State) handleMsg(mi msgInfo) {
-	_, stopFn := cs.meter.FuncTimingCtx(context.Background(), "handleMsg", amxmetrics.Tag("msg", fmt.Sprintf("%T", mi.Msg)))
-	defer stopFn()
-
 	cs.mtx.Lock()
 	defer cs.mtx.Unlock()
 	var (
@@ -967,7 +956,7 @@ func (cs *State) handleMsg(mi msgInfo) {
 	}
 
 	if err != nil {
-		cs.Logger.Info(
+		cs.Logger.Error(
 			"Failed to process message",
 			"height", cs.Height,
 			"round", cs.Round,

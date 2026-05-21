@@ -236,7 +236,7 @@ func (state State) MakeBlock(
 	lastCommit *types.Commit,
 	evidence []types.Evidence,
 	proposerAddress []byte,
-) (*types.Block, error) {
+) *types.Block {
 	// Build base block with block data.
 	block := types.MakeBlock(height, txs, lastCommit, evidence)
 
@@ -248,11 +248,7 @@ func (state State) MakeBlock(
 	case height == state.InitialHeight:
 		timestamp = state.LastBlockTime // genesis time
 	default:
-		ts, err := lastCommit.MedianTime(state.LastValidators)
-		if err != nil {
-			return nil, fmt.Errorf("error making block while calculating median time: %w", err)
-		}
-		timestamp = ts
+		timestamp = lastCommit.MedianTime(state.LastValidators)
 	}
 
 	// Fill rest of header with state data.
@@ -264,7 +260,7 @@ func (state State) MakeBlock(
 		proposerAddress,
 	)
 
-	return block, nil
+	return block
 }
 
 // ------------------------------------------------------------------------

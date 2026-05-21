@@ -11,7 +11,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/axiomis-labs/metrics/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
@@ -86,7 +85,6 @@ type Node struct {
 	indexerService    *txindex.IndexerService
 	prometheusSrv     *http.Server
 	pprofSrv          *http.Server
-	meter             metrics.Meter
 }
 
 type waitSyncP2PReactor interface {
@@ -274,8 +272,7 @@ func BootstrapState(ctx context.Context, config *cfg.Config, dbProvider cfg.DBPr
 // ------------------------------------------------------------------------------
 
 // NewNode returns a new, ready to go, CometBFT Node.
-func NewNode(
-	ctx context.Context,
+func NewNode(ctx context.Context,
 	config *cfg.Config,
 	privValidator types.PrivValidator,
 	nodeKey *p2p.NodeKey,
@@ -284,11 +281,9 @@ func NewNode(
 	dbProvider cfg.DBProvider,
 	metricsProvider MetricsProvider,
 	logger log.Logger,
-	meter metrics.Meter,
 	options ...Option,
 ) (*Node, error) {
-	return NewNodeWithCliParams(
-		ctx,
+	return NewNodeWithCliParams(ctx,
 		config,
 		privValidator,
 		nodeKey,
@@ -298,17 +293,14 @@ func NewNode(
 		metricsProvider,
 		logger,
 		CliParams{},
-		meter,
-		options...,
-	)
+		options...)
 }
 
 // NewNodeWithCliParams returns a new, ready to go, CometBFT node
 // where we check the hash of the provided genesis file against
 // a hash provided by the operator via cli.
 
-func NewNodeWithCliParams(
-	ctx context.Context,
+func NewNodeWithCliParams(ctx context.Context,
 	config *cfg.Config,
 	privValidator types.PrivValidator,
 	nodeKey *p2p.NodeKey,
@@ -318,13 +310,8 @@ func NewNodeWithCliParams(
 	metricsProvider MetricsProvider,
 	logger log.Logger,
 	cliParams CliParams,
-	meter metrics.Meter,
 	options ...Option,
 ) (*Node, error) {
-	if meter == nil {
-		meter = metrics.NewNilMeter()
-	}
-
 	if config.BaseConfig.DBBackend == "boltdb" || config.BaseConfig.DBBackend == "cleveldb" {
 		logger.Info("WARNING: BoltDB and GoLevelDB are deprecated and will be removed in a future release. Please switch to a different backend.")
 	}
@@ -347,7 +334,6 @@ func NewNodeWithCliParams(
 	stateStore := sm.NewStore(stateDB, sm.StoreOptions{
 		DiscardABCIResponses: config.Storage.DiscardABCIResponses,
 		Metrics:              smMetrics,
-		Meter:                meter.SubMeter("state", metrics.Tag("svc", "state")),
 		Compact:              config.Storage.Compact,
 		CompactionInterval:   config.Storage.CompactionInterval,
 		Logger:               logger,
@@ -441,16 +427,7 @@ func NewNodeWithCliParams(
 
 	logNodeStartupInfo(state, pubKey, logger, consensusLogger)
 
-	mempool, mempoolReactor := createMempoolAndMempoolReactor(
-		config,
-		proxyApp,
-		state,
-		waitSync,
-		memplMetrics,
-		logger,
-		appInfoResponse,
-		meter.SubMeter("mempool", metrics.Tag("svc", "mempool")),
-	)
+	mempool, mempoolReactor := createMempoolAndMempoolReactor(config, proxyApp, state, waitSync, memplMetrics, logger, appInfoResponse)
 
 	evidenceReactor, evidencePool, err := createEvidenceReactor(config, dbProvider, stateStore, blockStore, logger)
 	if err != nil {
@@ -498,7 +475,6 @@ func NewNodeWithCliParams(
 	consensusReactor, consensusState := createConsensusReactor(
 		config, state, blockExec, blockStore, mempool, evidencePool,
 		privValidator, csMetrics, waitSync, eventBus, consensusLogger, offlineStateSyncHeight,
-		meter.SubMeter("consensus", metrics.Tag("svc", "consensus")),
 	)
 
 	err = stateStore.SetOfflineStateSyncHeight(0)
@@ -514,7 +490,6 @@ func NewNodeWithCliParams(
 		proxyApp.Snapshot(),
 		proxyApp.Query(),
 		ssMetrics,
-		meter.SubMeter("statesync", metrics.Tag("svc", "statesync")),
 	)
 	stateSyncReactor.SetLogger(logger.With("module", "statesync"))
 
@@ -595,7 +570,6 @@ func NewNodeWithCliParams(
 		indexerService:   indexerService,
 		blockIndexer:     blockIndexer,
 		eventBus:         eventBus,
-		meter:            meter,
 	}
 	node.BaseService = *service.NewBaseService(logger, "Node", node)
 

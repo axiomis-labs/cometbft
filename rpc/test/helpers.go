@@ -162,18 +162,11 @@ func NewCometBFT(app abci.Application, opts *Options) *nm.Node {
 	if err != nil {
 		panic(err)
 	}
-	node, err := nm.NewNode(
-		context.Background(),
-		config,
-		pv,
-		nodeKey,
-		papp,
+	node, err := nm.NewNode(context.Background(), config, pv, nodeKey, papp,
 		nm.DefaultGenesisDocProviderFunc(config),
 		cfg.DefaultDBProvider,
 		nm.DefaultMetricsProvider(config.Instrumentation),
-		logger,
-		nil,
-	)
+		logger)
 	if err != nil {
 		panic(err)
 	}

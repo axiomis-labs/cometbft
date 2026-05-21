@@ -880,10 +880,7 @@ func makeBlocks(n int, state sm.State, privVals []types.PrivValidator) ([]*types
 		if err != nil {
 			return nil, err
 		}
-		block, err := state.MakeBlock(height, test.MakeNTxs(height, 10), lastCommit, nil, state.LastValidators.Proposer.Address)
-		if err != nil {
-			return nil, err
-		}
+		block := state.MakeBlock(height, test.MakeNTxs(height, 10), lastCommit, nil, state.LastValidators.Proposer.Address)
 		blocks[i] = block
 		state.LastBlockID = blockID
 		state.LastBlockHeight = height
